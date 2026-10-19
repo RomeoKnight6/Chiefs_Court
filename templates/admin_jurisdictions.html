@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header"><h2>Villages / Jurisdictions</h2></div>
+<div class="page-body">
+    <form method="post" class="card">
+        <label class="required">New village name</label>
+        <input name="name" required>
+        <p><button class="btn btn-yellow">Add village</button></p>
+    </form>
+    <div class="card">
+        <table><tr><th>Village</th></tr>
+        {% for j in jurisdictions %}<tr><td>{{ j.name }}</td></tr>{% endfor %}
+        </table>
+    </div>
+</div>
+{% endblock %}

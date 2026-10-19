@@ -1,0 +1,84 @@
+{% from "_icons.html" import icon %}
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Hearing {{ case.case_number }} - Chief's Court</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:wght@500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="room-body">
+
+<header class="room-top">
+    <a href="{{ url_for('case_detail', case_id=case.id) }}">{{ icon('arrow-left', 18) }} Back to case</a>
+    <div class="room-title">
+        <strong>Hearing · {{ case.case_number }}</strong>
+        <span>{{ case.cause_of_action }} · {{ case.jurisdiction }}</span>
+    </div>
+    <span class="live">Live</span>
+    <span class="room-timer" id="timer">00:00</span>
+</header>
+
+<div class="room-main">
+    {# ---------- Video area ---------- #}
+    <section class="stage">
+        <div class="waiting" id="waiting">Waiting for others to join…</div>
+        <div class="room-notice hide" id="notice"></div>
+        <div class="video-grid" id="grid" data-count="1"></div>
+
+        <div class="controls">
+            <button class="ctrl" id="btn-mic" type="button">
+                <span class="when-on">{{ icon('mic', 22) }}</span><span class="when-off">{{ icon('mic-off', 22) }}</span>
+                <span class="when-on">Mute</span><span class="when-off">Unmute</span>
+            </button>
+            <button class="ctrl" id="btn-cam" type="button">
+                <span class="when-on">{{ icon('video', 22) }}</span><span class="when-off">{{ icon('video-off', 22) }}</span>
+                <span class="when-on">Stop video</span><span class="when-off">Start video</span>
+            </button>
+            <button class="ctrl leave" id="btn-leave" type="button">{{ icon('phone-off', 22) }}<span>Leave</span></button>
+        </div>
+    </section>
+
+    {# ---------- Side panel ---------- #}
+    <aside class="room-panel">
+        <div class="room-tabs" data-tabs>
+            <button class="tab active" type="button" data-tab="pane-people">People</button>
+            <button class="tab" type="button" data-tab="pane-chat">Chat</button>
+            <button class="tab" type="button" data-tab="pane-case">Case</button>
+        </div>
+
+        <div class="room-pane active" id="pane-people">
+            <h4>In this hearing</h4>
+            <ul class="people" id="people"></ul>
+        </div>
+
+        <div class="room-pane" id="pane-chat">
+            <div class="chat-log" id="chat-log"></div>
+            <form class="chat-form" id="chat-form">
+                <input id="chat-input" placeholder="Type a message" autocomplete="off" maxlength="500">
+                <button class="btn btn-yellow" aria-label="Send">{{ icon('send', 18) }}</button>
+            </form>
+        </div>
+
+        <div class="room-pane" id="pane-case">
+            <dl>
+                <dt>Applicant</dt><dd>{{ case.applicant_name }} {{ case.applicant_surname }}</dd>
+                <dt>Cause of action</dt><dd>{{ case.cause_of_action }}</dd>
+                <dt>Participants</dt><dd>{{ case.participants or '-' }}</dd>
+                <dt>Description</dt><dd>{{ case.description or '-' }}</dd>
+                <dt>Hearing</dt><dd>{{ hearing.hearing_date }} at {{ hearing.hearing_time }}</dd>
+            </dl>
+            <h4>Documents</h4>
+            {% for f in files %}<div><a href="{{ url_for('download_case_file', file_id=f.id) }}">{{ f.filename }}</a></div>
+            {% else %}<span class="muted">None uploaded.</span>{% endfor %}
+        </div>
+    </aside>
+</div>
+
+<script>window.ROOM = {{ room_config|tojson }};</script>
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+<script src="{{ url_for('static', filename='room.js') }}"></script>
+</body>
+</html>

@@ -1,0 +1,35 @@
+{% from "_icons.html" import icon %}
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}Chief's Court{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:wght@500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<div class="auth">
+    <section class="auth-aside">
+        <span class="brand-badge">{{ icon('scale', 32) }}</span>
+        <h1>Village justice, now online.</h1>
+        <p>A secure platform for chiefs' courts to receive cases, schedule hearings and record decisions.</p>
+        <ul class="auth-points">
+            <li>{{ icon('check') }} File a case from your phone</li>
+            <li>{{ icon('check') }} Get hearing dates and notices instantly</li>
+            <li>{{ icon('check') }} Join your hearing by video from home</li>
+        </ul>
+    </section>
+    <section class="auth-main">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% for category, message in messages %}
+                <div class="flash {{ category }}" style="width:100%;max-width:400px;margin:0 0 16px">{{ message }}</div>
+            {% endfor %}
+        {% endwith %}
+        {% block panel %}{% endblock %}
+        <div class="auth-footer">Chief's Court Online Platform 2026</div>
+    </section>
+</div>
+</body>
+</html>

@@ -1,0 +1,284 @@
+{% extends "base.html" %}
+{% block content %}
+<form method="post" enctype="multipart/form-data">
+    <div class="page-header">
+        <div><h2>Case</h2><span class="state">State: New</span></div>
+        <div class="actions">
+            <a class="btn" href="{{ url_for('case_list') }}">Cancel</a>
+            <button class="btn btn-yellow">Save &amp; Submit</button>
+        </div>
+    </div>
+
+    <div class="page-body">
+        <div class="card">
+            <h3>General Information</h3>
+            <div class="grid-2">
+                <div><label class="required">Name of the applicant</label>
+                     <input name="applicant_name" value="{{ user.first_name }}" required></div>
+                <div><label class="required">Surname of the applicant</label>
+                     <input name="applicant_surname" value="{{ user.surname }}" required></div>
+
+                <div class="full"><label class="required">Village / jurisdiction</label>
+                    <select name="jurisdiction" required>
+                        <option value="">Select</option>
+                        {% for j in jurisdictions %}<option>{{ j.name }}</option>{% endfor %}
+                    </select></div>
+
+                <div class="full">
+    <label>Participants (respondents and witnesses)</label>
+
+    <div id="participants-container">
+        <div class="participant-row">
+            <div>
+                <label>Role</label>
+                <select name="participant_role">
+                    <option value="Respondent">Respondent</option>
+                    <option value="Witness">Witness</option>
+                </select>
+            </div>
+
+            <div>
+                <label>Name</label>
+                <input type="text" name="participant_name"
+                       placeholder="First name">
+            </div>
+
+            <div>
+                <label>Surname</label>
+                <input type="text" name="participant_surname"
+                       placeholder="Surname">
+            </div>
+
+            <button type="button" class="btn remove-btn"
+                    onclick="removeParticipant(this)">
+                Remove
+            </button>
+        </div>
+    </div>
+
+    <button type="button" class="btn"
+            onclick="addParticipant()">
+        + Add Participant
+    </button>
+</div>
+
+                <div class="full"><label class="required">Cause of action</label>
+                     <input name="cause_of_action" required></div>
+
+                <div class="full"><label>Case description</label>
+                     <textarea name="description"></textarea></div>
+
+                <div class="full"><label>Upload files (evidence, letters, photos)</label>
+                     
+<div class="upload-section">
+    <label class="upload-label">Supporting Documents</label>
+    <p class="upload-description">
+        Add all documents and evidence relating to your case.
+    </p>
+
+    <div class="upload-dropzone" id="uploadDropzone">
+        <div class="upload-icon">📂</div>
+        <h3>Attach your files</h3>
+        <p>Choose files more than once to add to your list.</p>
+
+        <button type="button" id="chooseFiles" class="upload-button">
+            + Add Files
+        </button>
+
+        <input type="file" id="caseFiles" name="files" multiple hidden>
+
+        <div class="upload-hint">Multiple files supported</div>
+    </div>
+
+    <div class="upload-list-header">
+        <strong>Your attachments</strong>
+        <span id="fileCount">0 files</span>
+    </div>
+
+    <div id="selectedFiles" class="selected-files">
+        <div class="upload-empty">
+            No files added yet.
+        </div>
+    </div>
+</div>
+
+                    
+                    </div>
+            </div>
+        </div>
+    </div>
+</form>
+
+<script>
+
+const fileInput = document.getElementById("caseFiles");
+const chooseFiles = document.getElementById("chooseFiles");
+const selectedFiles = document.getElementById("selectedFiles");
+const fileCount = document.getElementById("fileCount");
+const uploadDropzone = document.getElementById("uploadDropzone");
+
+let attachedFiles = [];
+
+function readableSize(bytes) {
+    if (bytes < 1024) return bytes + " B";
+    if (bytes < 1024 * 1024)
+        return (bytes / 1024).toFixed(1) + " KB";
+    return (bytes / (1024 * 1024)).toFixed(2) + " MB";
+}
+
+function fileKey(file) {
+    return `${file.name}-${file.size}-${file.lastModified}`;
+}
+
+function syncFileInput() {
+    const transfer = new DataTransfer();
+
+    attachedFiles.forEach(file => transfer.items.add(file));
+    fileInput.files = transfer.files;
+}
+
+function displayFiles() {
+    selectedFiles.replaceChildren();
+
+    fileCount.textContent =
+        `${attachedFiles.length} file${attachedFiles.length === 1 ? "" : "s"}`;
+
+    if (attachedFiles.length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "upload-empty";
+        empty.textContent = "No files added yet.";
+        selectedFiles.appendChild(empty);
+        return;
+    }
+
+    attachedFiles.forEach((file, index) => {
+        const row = document.createElement("div");
+        row.className = "upload-file-row";
+
+        const fileIcon = document.createElement("div");
+        fileIcon.className = "upload-file-icon";
+        fileIcon.textContent = "📄";
+
+        const info = document.createElement("div");
+        info.className = "upload-file-info";
+
+        const filename = document.createElement("strong");
+        filename.className = "upload-filename";
+        filename.textContent = file.name;
+
+        const filesize = document.createElement("span");
+        filesize.className = "upload-filesize";
+        filesize.textContent = readableSize(file.size);
+
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.className = "upload-remove";
+        remove.textContent = "Remove";
+        remove.setAttribute("aria-label", `Remove ${file.name}`);
+
+        remove.addEventListener("click", () => {
+            attachedFiles.splice(index, 1);
+            syncFileInput();
+            displayFiles();
+        });
+
+        info.append(filename, filesize);
+        row.append(fileIcon, info, remove);
+        selectedFiles.appendChild(row);
+    });
+}
+
+function addFiles(fileList) {
+    const knownFiles = new Set(attachedFiles.map(fileKey));
+
+    for (const file of fileList) {
+        const key = fileKey(file);
+
+        if (!knownFiles.has(key)) {
+            attachedFiles.push(file);
+            knownFiles.add(key);
+        }
+    }
+
+    syncFileInput();
+    displayFiles();
+}
+
+chooseFiles.addEventListener("click", () => fileInput.click());
+
+fileInput.addEventListener("change", () => {
+    addFiles(fileInput.files);
+
+    // Clear the picker so the same file can be selected again if needed.
+    //fileInput.value = "";
+});
+
+fileInput.addEventListener("change", event => {
+    const newlySelectedFiles = Array.from(event.target.files);
+
+    addFiles(newlySelectedFiles);
+
+    syncFileInput();
+});
+
+uploadDropzone.addEventListener("dragover", event => {
+    event.preventDefault();
+    uploadDropzone.classList.add("drag-over");
+});
+
+uploadDropzone.addEventListener("dragleave", () => {
+    uploadDropzone.classList.remove("drag-over");
+});
+
+uploadDropzone.addEventListener("drop", event => {
+    event.preventDefault();
+    uploadDropzone.classList.remove("drag-over");
+    addFiles(event.dataTransfer.files);
+});
+
+displayFiles();
+
+
+function addParticipant() {
+    const container = document.getElementById(
+        "participants-container"
+    );
+
+    const row = document.createElement("div");
+    row.className = "participant-row";
+
+    row.innerHTML = `
+        <div>
+            <label>Role</label>
+            <select name="participant_role">
+                <option value="Respondent">Respondent</option>
+                <option value="Witness">Witness</option>
+            </select>
+        </div>
+
+        <div>
+            <label>Name</label>
+            <input type="text" name="participant_name"
+                   placeholder="First name">
+        </div>
+
+        <div>
+            <label>Surname</label>
+            <input type="text" name="participant_surname"
+                   placeholder="Surname">
+        </div>
+
+        <button type="button" class="btn remove-btn"
+                onclick="removeParticipant(this)">
+            Remove
+        </button>
+    `;
+
+    container.appendChild(row);
+}
+
+function removeParticipant(button) {
+    button.closest(".participant-row").remove();
+}
+</script>
+{% endblock %}

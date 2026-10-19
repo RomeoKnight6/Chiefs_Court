@@ -1,0 +1,49 @@
+{# Reusable pieces: status badge, case table, hearing list #}
+{% from "_icons.html" import icon %}
+
+{% macro status_badge(status) %}
+    <span class="badge {{ status|lower|replace(' ', '-') }}">{{ status }}</span>
+{% endmacro %}
+
+{% macro case_table(cases) %}
+    {% if cases %}
+    <div class="table-wrap"><table>
+        <tr><th>Case no.</th><th>Applicant</th><th>Cause of action</th><th>Village</th><th>Status</th><th>Filed</th></tr>
+        {% for c in cases %}
+        <tr>
+            <td><a href="{{ url_for('case_detail', case_id=c.id) }}"><strong>{{ c.case_number }}</strong></a></td>
+            <td>{{ c.applicant_name }} {{ c.applicant_surname }}</td>
+            <td>{{ c.cause_of_action }}</td>
+            <td>{{ c.jurisdiction }}</td>
+            <td>{{ status_badge(c.status) }}</td>
+            <td>{{ c.created_at[:10] }}</td>
+        </tr>
+        {% endfor %}
+    </table></div>
+    {% else %}
+        <div class="empty">No cases to show.</div>
+    {% endif %}
+{% endmacro %}
+
+{# A short line for a date block: month name from "YYYY-MM-DD" #}
+{% macro date_block(date) %}
+    <div class="date-block"><b>{{ ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][date[5:7]|int - 1] }}</b><span>{{ date[8:10] }}</span></div>
+{% endmacro %}
+
+{# Hearing rows. Online hearings get a "Join video hearing" button. #}
+{% macro hearing_list(hearings) %}
+    {% for h in hearings %}
+    <div class="hearing-row">
+        {{ date_block(h.hearing_date) }}
+        <div class="hearing-info">
+            <strong><a href="{{ url_for('case_detail', case_id=h.case_id) }}">{{ h.case_number }}</a> · {{ h.cause_of_action }}</strong>
+            <span>{{ h.hearing_time }} · {{ h.mode }}{% if h.mode == 'Physical' and h.location %} · {{ h.location }}{% endif %}</span>
+        </div>
+        {% if h.mode == 'Online' %}
+            <a class="btn btn-green" href="{{ url_for('hearing_room', hearing_id=h.id) }}">{{ icon('video', 18) }} Join video hearing</a>
+        {% endif %}
+    </div>
+    {% else %}
+        <div class="empty">No upcoming hearings.</div>
+    {% endfor %}
+{% endmacro %}

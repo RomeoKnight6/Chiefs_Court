@@ -1,0 +1,131 @@
+{% from "_icons.html" import icon %}
+{# One sidebar link. `endpoints` lists the pages that should light it up. #}
+{% macro nav_link(endpoint, label, icon_name, count=0, also=[]) %}
+    <a class="nav-link {{ 'active' if request.endpoint == endpoint or request.endpoint in also }}" href="{{ url_for(endpoint) }}">
+        {{ icon(icon_name) }} <span>{{ label }}</span>
+        {% if count %}<span class="pill">{{ count }}</span>{% endif %}
+    </a>
+{% endmacro %}
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}Chief's Court{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:wght@500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<div class="app">
+
+    <aside class="sidebar" id="sidebar">
+        <a class="sidebar-brand" href="{{ url_for('dashboard') }}">
+            <span class="brand-badge">{{ icon('scale', 24) }}</span>
+            <span class="brand-name">Chief's Court<small>Online platform</small></span>
+        </a>
+
+        {% set role = user.role %}
+        <nav>
+            {# ---- Everyone but the admin ---- #}
+            {% if role != 'admin' %}
+            <div class="nav-group">
+                <div class="nav-heading">Workspace</div>
+                {{ nav_link('dashboard', 'Pending my action', 'dashboard', nav_counts.review or nav_counts.summons) }}
+                {% if role in ['applicant', 'clerk', 'chief', 'assessor', 'accountant'] %}
+                    {{ nav_link('case_list', 'My cases' if role == 'applicant' else 'Cases', 'cases', also=['case_detail']) }}
+                {% endif %}
+                {% if role in ['applicant', 'clerk', 'chief', 'assessor'] %}
+                    {{ nav_link('hearing_list', 'Hearings', 'calendar') }}
+                {% endif %}
+                {% if role == 'messenger' %}
+                    {{ nav_link('summons_list', 'My summons', 'file') }}
+                {% endif %}
+            </div>
+            {% endif %}
+
+            {% if role == 'applicant' %}
+            <div class="nav-group">
+                <div class="nav-heading">Get started</div>
+                {{ nav_link('case_new', 'File a case', 'plus') }}
+            </div>
+            {% endif %}
+
+            {% if role == 'accountant' %}
+            <div class="nav-group">
+                <div class="nav-heading">Finance</div>
+                {{ nav_link('payment_list', 'Payments', 'payments') }}
+            </div>
+            {% endif %}
+
+            {% if role == 'admin' %}
+            <div class="nav-group">
+                <div class="nav-heading">Administration</div>
+                {{ nav_link('dashboard', 'Overview', 'dashboard') }}
+                {{ nav_link('admin_users', 'Manage users', 'users') }}
+                {{ nav_link('admin_jurisdictions', 'Villages', 'pin') }}
+            </div>
+            {% endif %}
+
+            
+<div class="nav-group">
+    <div class="nav-heading">Account</div>
+
+    {{ nav_link(
+        'notification_list',
+        'Notifications',
+        'bell',
+        unread_count,
+        also=['notification_view']
+    ) }}
+
+    {{ nav_link(
+        'change_password',
+        'Change Password',
+        'lock'
+    ) }}
+</div>
+
+        </nav>
+
+        <div class="sidebar-user">
+            <div class="avatar">{{ user.first_name[:1] }}{{ user.surname[:1] }}</div>
+            <div class="who">{{ user.first_name }} {{ user.surname }}
+                <span>{{ user.role|title }}{% if user.jurisdiction %} · {{ user.jurisdiction }}{% endif %}</span></div>
+            <a href="{{ url_for('logout') }}" title="Log out" aria-label="Log out">{{ icon('logout') }}</a>
+        </div>
+    </aside>
+
+    <div class="main">
+        <header class="topbar">
+            <button class="menu-button" id="menu-button" aria-label="Open menu">{{ icon('menu', 24) }}</button>
+            {% if role in ['applicant', 'clerk', 'chief', 'assessor', 'accountant'] %}
+            <form class="search" action="{{ url_for('case_list') }}" method="get" role="search">
+                {{ icon('search', 18) }}
+                <input name="q" value="{{ request.args.get('q', '') }}" placeholder="Find a case by number, name or cause" aria-label="Search cases">
+            </form>
+            {% endif %}
+            <div class="topbar-right">
+                {% if role == 'applicant' %}
+                    <a class="btn btn-yellow" href="{{ url_for('case_new') }}">{{ icon('plus', 18) }} File a case</a>
+                {% endif %}
+                <a class="icon-button" href="{{ url_for('notification_list') }}" title="Notifications" aria-label="Notifications">
+                    {{ icon('bell', 22) }}
+                    {% if unread_count %}<span class="dot-count">{{ unread_count }}</span>{% endif %}
+                </a>
+            </div>
+        </header>
+
+        <main class="content">
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% for category, message in messages %}
+                    <div class="flash {{ category }}">{{ message }}</div>
+                {% endfor %}
+            {% endwith %}
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+</div>
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

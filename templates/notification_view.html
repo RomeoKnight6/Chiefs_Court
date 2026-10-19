@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header"><h2>{{ note.subject }}</h2><a class="btn" href="{{ url_for('notification_list') }}">Back</a></div>
+<div class="page-body"><div class="card">
+    <p class="state">{{ note.created_at }}</p>
+    <p>{{ note.message }}</p>
+    {% if note.case_id and user.role != 'messenger' %}
+        <p><a class="btn btn-yellow" href="{{ url_for('case_detail', case_id=note.case_id) }}">Open case</a></p>
+    {% endif %}
+</div></div>
+{% endblock %}

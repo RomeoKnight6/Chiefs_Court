@@ -1,0 +1,31 @@
+{% extends "auth_base.html" %}
+{% block title %}Public access - Chief's Court{% endblock %}
+{% block panel %}
+<div class="auth-box wide">
+    <h2>Verify a case or order</h2>
+    <p class="sub">Enter the case number printed on your notice.</p>
+    <form method="post" class="card">
+        <label class="required" for="case_number">Case number</label>
+        <input id="case_number" name="case_number" placeholder="e.g. CC-2026-0001" required>
+        <p style="margin-top:20px"><button class="btn btn-green">Check case</button>
+           <a class="btn" href="{{ url_for('login') }}">Back to login</a></p>
+    </form>
+
+    {% if searched and not case %}
+        <div class="flash error" style="margin:0">No case was found with that number.</div>
+    {% elif case %}
+    <div class="card">
+        <dl class="detail-list">
+            <dt>Case number</dt><dd>{{ case.case_number }}</dd>
+            <dt>Village</dt><dd>{{ case.jurisdiction }}</dd>
+            <dt>Cause of action</dt><dd>{{ case.cause_of_action }}</dd>
+            <dt>Status</dt><dd>{{ case.status }}</dd>
+            {% if case.status in ['Decided', 'Closed'] and case.decision %}
+                <dt>Order</dt><dd>{{ case.decision }}</dd>
+                <dt>Date of order</dt><dd>{{ case.decided_at }}</dd>
+            {% endif %}
+        </dl>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

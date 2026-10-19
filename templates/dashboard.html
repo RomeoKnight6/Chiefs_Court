@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% from "_macros.html" import case_table, hearing_list, status_badge %}
+{% from "_icons.html" import icon %}
+{% block content %}
+
+<div class="welcome">
+    <h2>{{ greeting }}, {{ user.first_name }}</h2>
+    <p>
+        {% if user.role == 'admin' %}Here is an overview of the platform.
+        {% elif user.role == 'messenger' %}Here are the summons waiting for you.
+        {% else %}Here is what needs your attention{% if user.jurisdiction %} in {{ user.jurisdiction }}{% endif %}.{% endif %}
+    </p>
+</div>
+
+<div class="stats">
+    {% for label, value in stats %}
+        <div class="stat {{ 'lead' if loop.first }}"><strong>{{ value }}</strong><span>{{ label }}</span></div>
+    {% endfor %}
+</div>
+
+{% if user.role == 'admin' %}
+    <div class="card">
+        <h3>Get started</h3>
+        <p>Add villages, then create accounts for the chief, clerk, assessor, accountant and messenger of each one.</p>
+        <a class="btn btn-yellow" href="{{ url_for('admin_users') }}">{{ icon('users', 18) }} Manage users</a>
+        <a class="btn" href="{{ url_for('admin_jurisdictions') }}">{{ icon('pin', 18) }} Villages</a>
+    </div>
+
+{% elif user.role == 'messenger' %}
+    <div class="card flush">
+        <div class="card-head"><h3>Summons to serve</h3></div>
+        {% if summons %}
+        <div class="table-wrap"><table>
+            <tr><th>Case</th><th>Person to serve</th><th>Notes</th><th>Document</th><th></th></tr>
+            {% for s in summons %}
+            <tr>
+                <td><strong>{{ s.case_number }}</strong></td><td>{{ s.recipient_name }}</td><td>{{ s.notes }}</td>
+                <td><a href="{{ url_for('download_summons', summons_id=s.id) }}">Download</a></td>
+                <td><form class="inline-form" method="post" action="{{ url_for('summons_served', summons_id=s.id) }}">
+                    <button class="btn btn-green btn-small">{{ icon('check', 16) }} Mark as served</button></form></td>
+            </tr>
+            {% endfor %}
+        </table></div>
+        {% else %}<div class="empty">Nothing to serve right now.</div>{% endif %}
+    </div>
+
+{% else %}
+    {# Highlight the next hearing, with a join button when it is online #}
+    {% if hearings %}
+    {% set next = hearings[0] %}
+    <div class="next-hearing">
+        <span>{{ icon('calendar', 34) }}</span>
+        <div class="grow">
+            <h3>Next hearing: {{ next.case_number }}</h3>
+            <p>{{ next.hearing_date }} at {{ next.hearing_time }} · {{ next.cause_of_action }} · {{ next.mode }}</p>
+        </div>
+        {% if next.mode == 'Online' and user.role != 'accountant' %}
+            <a class="btn btn-yellow" href="{{ url_for('hearing_room', hearing_id=next.id) }}">{{ icon('video', 18) }} Join video hearing</a>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <div class="card flush">
+        <div class="card-head">
+            <h3>{% if user.role == 'clerk' %}Cases to review or schedule
+                {% elif user.role == 'chief' %}Cases waiting for a decision
+                {% elif user.role == 'applicant' %}My open cases
+                {% else %}Recent cases{% endif %}</h3>
+            <a href="{{ url_for('case_list') }}">View all</a>
+        </div>
+        {{ case_table(pending_cases) }}
+    </div>
+
+    {% if user.role != 'accountant' %}
+    <div class="card flush">
+        <div class="card-head"><h3>Upcoming hearings</h3></div>
+        {{ hearing_list(hearings) }}
+    </div>
+    {% endif %}
+{% endif %}
+{% endblock %}

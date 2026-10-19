@@ -1,0 +1,18 @@
+{% extends "auth_base.html" %}
+{% block title %}Log in - Chief's Court{% endblock %}
+{% block panel %}
+<div class="auth-box">
+    <h2>Welcome back</h2>
+    <p class="sub">Log in to the Chief's Court platform.</p>
+    <form method="post">
+        <label for="username">Username</label>
+        <input id="username" name="username" required autofocus autocomplete="username">
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" required autocomplete="current-password">
+        <p style="margin-top:20px"><button class="btn btn-green btn-block">Log in</button></p>
+    </form>
+    <a class="btn btn-outline btn-block" href="{{ url_for('register') }}">Create an applicant account</a>
+    <a class="btn btn-outline btn-block" href="{{ url_for('public_access') }}">Public access</a>
+    <p class="auth-note">Use Public access to verify a case or order.</p>
+</div>
+{% endblock %}

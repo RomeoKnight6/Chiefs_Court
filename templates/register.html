@@ -1,0 +1,21 @@
+{% extends "auth_base.html" %}
+{% block title %}Register - Chief's Court{% endblock %}
+{% block panel %}
+<div class="auth-box wide">
+    <h2>Create your account</h2>
+    <p class="sub">Applicants can file cases and follow them online.</p>
+    <form method="post" class="card">
+        <div class="grid-2">
+            <div><label class="required">Name</label><input name="first_name" required></div>
+            <div><label class="required">Surname</label><input name="surname" required></div>
+            <div><label>Email</label><input name="email" type="email"></div>
+            <div><label>Phone</label><input name="phone"></div>
+            <div class="full"><label class="required">Username</label><input name="username" required></div>
+            <div><label class="required">Password</label><input name="password" type="password" minlength="6" required></div>
+            <div><label class="required">Confirm password</label><input name="confirm" type="password" required></div>
+        </div>
+        <p style="margin-top:20px"><button class="btn btn-green">Create account</button>
+           <a class="btn" href="{{ url_for('login') }}">Back to login</a></p>
+    </form>
+</div>
+{% endblock %}

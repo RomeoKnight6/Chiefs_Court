@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header"><h2>Payments</h2></div>
+<div class="page-body"><div class="card flush">
+    {% if payments %}
+    <div class="table-wrap"><table>
+        <tr><th>Date</th><th>Case</th><th>Paid by</th><th>Type</th><th>Amount</th><th>Purpose</th><th>Method</th><th>Reference</th></tr>
+        {% for p in payments %}
+        <tr>
+            <td>{{ p.created_at[:10] }}</td>
+            <td><a href="{{ url_for('case_detail', case_id=p.case_id) }}">{{ p.case_number }}</a></td>
+            <td>{{ p.payer_name }}</td><td>{{ p.payer_type }}</td>
+            <td>{{ '%.2f'|format(p.amount) }}</td><td>{{ p.purpose }}</td><td>{{ p.method }}</td><td>{{ p.reference }}</td>
+        </tr>
+        {% endfor %}
+    </table></div>
+    {% else %}<div class="empty">No payments logged yet. Open a case to log one.</div>{% endif %}
+</div></div>
+{% endblock %}

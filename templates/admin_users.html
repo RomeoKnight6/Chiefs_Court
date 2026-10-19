@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header"><h2>Manage Users</h2></div>
+<div class="page-body">
+
+    <form method="post" class="card">
+        <h3>Create an official account</h3>
+        <div class="grid-2">
+            <div><label class="required">Name</label><input name="first_name" required></div>
+            <div><label class="required">Surname</label><input name="surname" required></div>
+            <div><label>Email</label><input name="email" type="email"></div>
+            <div><label>Phone</label><input name="phone"></div>
+            <div><label class="required">Role</label>
+                <select name="role" required>{% for r in roles %}<option value="{{ r }}">{{ r|title }}</option>{% endfor %}</select></div>
+            <div><label class="required">Village / jurisdiction</label>
+                <select name="jurisdiction" required>{% for j in jurisdictions %}<option>{{ j.name }}</option>{% endfor %}</select></div>
+            <div><label class="required">Username</label><input name="username" required></div>
+            <div><label class="required">Temporary password</label><input name="password" minlength="6" required></div>
+        </div>
+        <p><button class="btn btn-yellow" style="margin-top:5px;">Create account</button></p>
+    </form>
+
+    {% macro user_table(rows, show_jurisdiction) %}
+    <div class="table-wrap"><table>
+        <tr><th>Name</th><th>Username</th><th>Role</th>{% if show_jurisdiction %}<th>Village</th>{% endif %}<th>Status</th><th></th></tr>
+        {% for u in rows %}
+        <tr>
+            <td>{{ u.first_name }} {{ u.surname }}</td><td>{{ u.username }}</td><td>{{ u.role|title }}</td>
+            {% if show_jurisdiction %}<td>{{ u.jurisdiction }}</td>{% endif %}
+            <td>{{ 'Active' if u.active else 'Disabled' }}</td>
+            <td>
+                <form class="inline-form" method="post" action="{{ url_for('admin_toggle_user', user_id=u.id) }}">
+                    <button class="btn btn-small">{{ 'Disable' if u.active else 'Enable' }}</button></form>
+                <form class="inline-form" method="post" action="{{ url_for('admin_delete_user', user_id=u.id) }}"
+                      onsubmit="return confirm('Delete this account permanently?');">
+                    <button class="btn btn-red btn-small">Delete</button></form>
+            </td>
+        </tr>
+        {% endfor %}
+    </table></div>
+    {% endmacro %}
+
+    <div class="card"><h3>Officials</h3>
+        {% if officials %}{{ user_table(officials, true) }}{% else %}<div class="empty">No officials yet.</div>{% endif %}</div>
+    <div class="card"><h3>Applicants</h3>
+        {% if applicants %}{{ user_table(applicants, false) }}{% else %}<div class="empty">No applicants yet.</div>{% endif %}</div>
+</div>
+
+{% endblock %}

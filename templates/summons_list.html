@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% from "_macros.html" import status_badge %}
+{% block content %}
+<div class="page-header"><h2>My Summons</h2></div>
+<div class="page-body"><div class="card flush">
+    {% if summons_list %}
+    <div class="table-wrap"><table>
+        <tr><th>Case</th><th>Serve</th><th>Notes</th><th>Status</th><th>Document</th><th></th></tr>
+        {% for s in summons_list %}
+        <tr>
+            <td>{{ s.case_number }}</td><td>{{ s.recipient_name }}</td><td>{{ s.notes }}</td>
+            <td>{{ status_badge(s.status) }}</td>
+            <td><a href="{{ url_for('download_summons', summons_id=s.id) }}">Download</a></td>
+            <td>{% if s.status == 'Pending' %}
+                <form class="inline-form" method="post" action="{{ url_for('summons_served', summons_id=s.id) }}">
+                    <button class="btn btn-green btn-small">Mark as served</button></form>
+                {% else %}Served {{ s.served_at }}{% endif %}</td>
+        </tr>
+        {% endfor %}
+    </table></div>
+    {% else %}<div class="empty">No summons yet.</div>{% endif %}
+</div></div>
+{% endblock %}

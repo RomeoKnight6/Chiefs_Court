@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header"><h2>Notifications</h2></div>
+<div class="page-body"><form method="post" class="card flush">
+    {% set unread = notes|selectattr('is_read', 'equalto', 0)|list|length %}
+    <p style="padding:16px 20px 0">{{ unread }} unread of {{ notes|length }}
+       <button class="btn btn-small" style="margin-left:12px">Mark selected as read</button></p>
+    {% if notes %}
+    <div class="table-wrap"><table>
+        <tr><th style="width:40px"></th><th>Subject</th><th>Send date</th></tr>
+        {% for n in notes %}
+        <tr class="{{ 'unread' if not n.is_read }}">
+            <td><input type="checkbox" name="selected" value="{{ n.id }}" style="width:auto"></td>
+            <td><a href="{{ url_for('notification_view', note_id=n.id) }}">{{ n.subject }}</a></td>
+            <td>{{ n.created_at }}</td>
+        </tr>
+        {% endfor %}
+    </table></div>
+    {% else %}<div class="empty">You have no notifications.</div>{% endif %}
+</form></div>
+{% endblock %}

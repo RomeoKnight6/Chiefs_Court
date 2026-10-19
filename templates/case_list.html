@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% from "_macros.html" import case_table %}
+{% from "_icons.html" import icon %}
+{% block content %}
+<div class="page-header">
+    <div><h2>{{ 'My cases' if user.role == 'applicant' else 'Cases' }}</h2>
+        <span class="state">{% if search %}Results for “{{ search }}”{% else %}{{ cases|length }} case{{ '' if cases|length == 1 else 's' }}{% endif %}</span></div>
+    {% if user.role == 'applicant' %}<a class="btn btn-yellow" href="{{ url_for('case_new') }}">{{ icon('plus', 18) }} File a case</a>{% endif %}
+</div>
+<div class="card flush">{{ case_table(cases) }}</div>
+{% endblock %}

@@ -1,0 +1,266 @@
+{% extends "base.html" %}
+{% from "_macros.html" import status_badge, date_block %}
+{% from "_icons.html" import icon %}
+{% block content %}
+{% set role = user.role %}
+
+{# ---------- Header ---------- #}
+<div class="page-header">
+    <div>
+        <h2>{{ case.case_number }} {{ status_badge(case.status) }}</h2>
+        <span class="state">{{ case.cause_of_action }} · {{ case.jurisdiction }}</span>
+    </div>
+    <a class="btn" href="{{ url_for('case_list') }}">{{ icon('arrow-left', 18) }} All cases</a>
+</div>
+
+{# ---------- Progress tracker ---------- #}
+{% set stage = {'Pending': 0, 'Approved': 1, 'Scheduled': 2, 'In Hearing': 2, 'Adjourned': 2, 'Decided': 3, 'Closed': 3, 'Denied': 1}[case.status] %}
+{% set denied = case.status == 'Denied' %}
+<div class="card" style="height:100px;">
+    <div class="stepper">
+        {% for label in ['Filed', 'Reviewed by clerk', 'Hearing', 'Decision'] %}
+            {% set state = 'failed' if (denied and loop.index0 == 1) else 'done' if loop.index0 < stage else 'current' if loop.index0 == stage else '' %}
+            <div class="step {{ state }}">
+                <div class="mark">{% if state == 'failed' %}!{% elif state == 'done' %}{{ icon('check', 16) }}{% else %}{{ loop.index }}{% endif %}</div>
+                {{ 'Denied' if (denied and loop.index0 == 1) else label }}
+            </div>
+        {% endfor %}
+    </div>
+</div>
+
+{% if role != 'applicant' %}
+<div class="detail-grid">
+{% else %}
+<div class="case-grid">
+{% endif %}
+    {# ================= Left: the case itself ================= #}
+    <div>
+        <div class="card">
+            <h3>Case details</h3>
+
+        
+             <dl class="detail-list">
+
+                <dt>Applicant</dt><dd>{{ case.applicant_name }} {{ case.applicant_surname }}</dd>
+                <dt>Village</dt><dd>{{ case.jurisdiction }}</dd>
+                <dt>Cause of action</dt><dd>{{ case.cause_of_action }}</dd>
+                <dt>Filed on</dt><dd>{{ case.created_at }}</dd>
+                {% if role != 'accountant' %}
+    <dt>Participants</dt>
+    <dd style="display: block;">
+        {% if participants %}
+            <div class="participants-list">
+                {% for p in participants %}
+                    <div class="participant-item">
+                        <strong>{{ p.role }}</strong>
+                        <span>{{ p.first_name }} {{ p.surname }}</span>
+                    </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            -
+        {% endif %}
+    </dd>
+
+    <dt>Description</dt>
+    <dd>{{ case.description or '-' }}</dd>
+{% endif %}
+                {% if denied %}<dt>Reason denied</dt><dd>{{ case.denial_reason }}</dd>{% endif %}
+            </dl>
+        </div>
+
+        {% if case.decision %}
+        <div class="card">
+            <h3>Chief's decision</h3>
+            <div class="decision-box">{{ case.decision }}</div>
+            <p class="muted" style="margin:10px 0 0">Recorded {{ case.decided_at }}</p>
+        </div>
+        {% endif %}
+
+        <div class="card flush">
+            <div class="card-head"><h3>Hearings</h3></div>
+            {% for h in hearings %}
+            <div class="hearing-row">
+                {{ date_block(h.hearing_date) }}
+                <div class="hearing-info">
+                    <strong>{{ h.hearing_date }} at {{ h.hearing_time }}</strong>
+                    <span>{{ h.mode }}{% if h.mode == 'Physical' and h.location %} · {{ h.location }}{% endif %}</span>
+                </div>
+                {% if h.mode == 'Online' and role != 'accountant' %}
+                    <a class="btn btn-green" href="{{ url_for('hearing_room', hearing_id=h.id) }}">{{ icon('video', 18) }} Join video hearing</a>
+                {% endif %}
+            </div>
+            {% else %}<div class="empty">No hearing scheduled yet.</div>{% endfor %}
+        </div>
+
+        {% if role != 'accountant' %}
+        <div class="card">
+            <h3>Documents</h3>
+            {% for f in files %}
+                <a class="doc-link" href="{{ url_for('download_case_file', file_id=f.id) }}">{{ icon('file') }} {{ f.filename }}</a>
+            {% else %}<p class="muted">No documents uploaded.</p>{% endfor %}
+        </div>
+        {% endif %}
+
+        {% if role in ['accountant', 'clerk'] %}
+        <div class="card flush">
+            <div class="card-head"><h3>Payments</h3></div>
+            {% if payments %}
+            <div class="table-wrap"><table>
+                <tr><th>Date</th><th>Paid by</th><th>Type</th><th>Amount</th><th>Purpose</th><th>Reference</th></tr>
+                {% for p in payments %}
+                <tr><td>{{ p.created_at[:10] }}</td><td>{{ p.payer_name }}</td><td>{{ p.payer_type }}</td>
+                    <td>{{ '%.2f'|format(p.amount) }}</td><td>{{ p.purpose }}</td><td>{{ p.reference }}</td></tr>
+                {% endfor %}
+            </table></div>
+            {% else %}<div class="empty">No payments logged for this case.</div>{% endif %}
+        </div>
+        {% endif %}
+
+        {% if role == 'clerk' and summons_list %}
+        <div class="card flush">
+            <div class="card-head"><h3>Summons sent</h3></div>
+            <div class="table-wrap"><table>
+                <tr><th>Person to serve</th><th>Messenger</th><th>Status</th><th>Document</th></tr>
+                {% for s in summons_list %}
+                <tr><td>{{ s.recipient_name }}</td><td>{{ s.messenger_name }}</td><td>{{ status_badge(s.status) }}</td>
+                    <td><a href="{{ url_for('download_summons', summons_id=s.id) }}">{{ s.filename }}</a></td></tr>
+                {% endfor %}
+            </table></div>
+        </div>
+        {% endif %}
+    </div>
+
+    {# ================= Right: actions for this role ================= #}
+    <div class="side-column">
+
+        {# ---------- Clerk ---------- #}
+        {% if role == 'clerk' and case.status == 'Pending' %}
+        <div class="card form-stack">
+            <h3>Review this case</h3>
+            <form method="post" action="{{ url_for('case_review', case_id=case.id) }}">
+                <label>Reason (only needed when denying)</label>
+                <input name="reason">
+                <p style="margin-top:18px;display:flex;gap:10px">
+                    <button name="decision" value="approve" class="btn btn-green" style="flex:1">Approve</button>
+                    <button name="decision" value="deny" class="btn btn-red" style="flex:1">Deny</button></p>
+            </form>
+        </div>
+
+        {% elif role == 'clerk' and not denied %}
+        <div class="card form-stack">
+            <h3>Case actions</h3>
+            <div class="tabs" data-tabs>
+                <button type="button" class="tab active" data-tab="t-hearing">Hearing</button>
+                <button type="button" class="tab" data-tab="t-status">Status</button>
+                <button type="button" class="tab" data-tab="t-notice">Notice</button>
+                <button type="button" class="tab" data-tab="t-summons">Summons</button>
+            </div>
+
+            <div class="tab-panel active" id="t-hearing">
+                <form method="post" action="{{ url_for('case_schedule', case_id=case.id) }}">
+                    <label class="required">Date</label><input type="date" name="hearing_date" required>
+                    <label class="required">Time</label><input type="time" name="hearing_time" required>
+                    <label>Type of hearing</label>
+                    <select name="mode" data-mode-select><option>Physical</option><option>Online</option></select>
+                    <div data-show-for="Physical"><label>Place</label><input name="location"></div>
+                    <p data-show-for="Online" class="muted" style="margin-top:12px">A private video room is created automatically.
+                        Everyone on the case will be notified.</p>
+                    <p style="margin-top:16px"><button class="btn btn-yellow btn-block">Schedule hearing</button></p>
+                </form>
+            </div>
+
+            <div class="tab-panel" id="t-status">
+                <form method="post" action="{{ url_for('case_status', case_id=case.id) }}">
+                    <label>Case status</label>
+                    <select name="status">
+                        {% for s in case_statuses %}<option {{ 'selected' if s == case.status }}>{{ s }}</option>{% endfor %}
+                    </select>
+                    <p style="margin-top:16px"><button class="btn btn-yellow btn-block">Update status</button></p>
+                </form>
+            </div>
+
+            <div class="tab-panel" id="t-notice">
+                <form method="post" action="{{ url_for('case_notice', case_id=case.id) }}">
+                    <label class="required">Subject</label><input name="subject" required>
+                    <label class="required">Message</label><textarea name="message" required></textarea>
+                    <p style="margin-top:16px"><button class="btn btn-yellow btn-block">Send notice to applicant</button></p>
+                </form>
+            </div>
+
+            <div class="tab-panel" id="t-summons">
+                {% if messengers %}
+                <form method="post" action="{{ url_for('case_summons', case_id=case.id) }}" enctype="multipart/form-data">
+                    <label class="required">Messenger / sheriff</label>
+                    <select name="messenger_id">
+                        {% for m in messengers %}<option value="{{ m.id }}">{{ m.first_name }} {{ m.surname }}</option>{% endfor %}
+                    </select>
+                    <label class="required">Person to be served</label><input name="recipient_name" required>
+                    <label>Notes</label><input name="notes">
+                    <label class="required">Summons document</label><input style="display: none" type="file" name="document" id="doc" required>
+                   <div id="file-set">
+                     
+                   </div>
+                    <button type="button" id="chooseFile" class="upload-button">
+            + upload
+        </button>
+                    <p style="margin-top:16px"><button class="btn btn-yellow btn-block">Send summons</button></p>
+                </form>
+                {% else %}<p class="muted">No messenger has been created for this village yet. Ask the system admin.</p>{% endif %}
+            </div>
+        </div>
+        {% endif %}
+
+        {# ---------- Chief ---------- #}
+        {% if role == 'chief' and case.status not in ['Pending', 'Denied'] %}
+        <div class="card form-stack">
+            <h3>{{ 'Update your decision' if case.decision else 'Record your decision' }}</h3>
+            <form method="post" action="{{ url_for('case_decision', case_id=case.id) }}">
+                <textarea name="decision" style="min-height:180px" required>{{ case.decision or '' }}</textarea>
+                <p style="margin-top:16px"><button class="btn btn-yellow btn-block">Save decision</button></p>
+            </form>
+        </div>
+        {% endif %}
+
+        {# ---------- Accountant ---------- #}
+        {% if role == 'accountant' %}
+        <div class="card form-stack">
+            <h3>Log a payment</h3>
+            <form method="post" action="{{ url_for('case_payment', case_id=case.id) }}">
+                <label class="required">Paid by</label><input name="payer_name" required>
+                <label>Payer is the</label><select name="payer_type"><option>Applicant</option><option>Respondent</option></select>
+                <label class="required">Amount</label><input name="amount" type="number" step="0.01" min="0" required>
+                <label>Purpose</label><input name="purpose" placeholder="e.g. filing fee, fine">
+                <label>Method</label><select name="method"><option>Cash</option><option>Mobile money</option><option>Bank</option></select>
+                <label>Receipt / reference no.</label><input name="reference">
+                <p style="margin-top:16px"><button class="btn btn-yellow btn-block">Log payment</button></p>
+            </form>
+        </div>
+        {% endif %}
+
+        {% if role in ['assessor'] %}
+        <div class="card"><h3>Read-only access</h3>
+            <p class="muted" style="margin:0">As assessor you can read this case and join its hearings. Only the clerk and chief can change it.</p></div>
+        {% endif %}
+    </div>
+</div>
+<script>
+    const fileInput = document.getElementById("doc");
+const chooseFile = document.getElementById("chooseFile");
+const fileShow= document.getElementById("file-set");
+chooseFile.addEventListener("click", () => fileInput.click());
+
+fileInput.addEventListener("change", () => {
+    let summonDoc;
+    for (const file of fileInput.files) {
+        summonDoc=file
+    }
+    fileShow.style.display='block';
+    fileShow.innerHTML=`<a class="doc-link">{{ icon('file') }} ${summonDoc.name}</a>`
+
+    // Clear the picker so the same file can be selected again if needed.
+    //fileInput.value = "";
+});
+
+</script>
+{% endblock %}

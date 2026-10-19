@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% from "_macros.html" import hearing_list %}
+{% block content %}
+<div class="page-header"><div><h2>Hearings</h2><span class="state">Upcoming hearings. Online hearings open in the video room.</span></div></div>
+<div class="card flush">{{ hearing_list(hearings) }}</div>
+{% endblock %}
