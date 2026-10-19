@@ -779,8 +779,8 @@ def forbidden(error):
 def not_found(error):
     return render_template("error.html", code=404, message="That page was not found."), 404
 
-
+db.init_db()
 if __name__ == "__main__":
     os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
-    db.init_db()
+    #db.init_db()
     app.run(debug=True)
