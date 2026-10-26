@@ -5,7 +5,28 @@
 <div class="page-header">
     <div><h2>{{ 'My cases' if user.role == 'applicant' else 'Cases' }}</h2>
         <span class="state">{% if search %}Results for “{{ search }}”{% else %}{{ cases|length }} case{{ '' if cases|length == 1 else 's' }}{% endif %}</span></div>
-    {% if user.role == 'applicant' %}<a class="btn btn-yellow" href="{{ url_for('case_new') }}">{{ icon('plus', 18) }} File a case</a>{% endif %}
+    {% if user.role == 'applicant' %}
+    <a class="btn btn-yellow" onclick="showPop()">{{ icon('plus', 18) }} Request case</a>
+
+    {% endif %}
+</div>
+<div class="popbox" id="pop">
+    <form method="post" action="{{ url_for('request_case_access') }}"  class="card">
+        <label class="required" for="case_number">Case number</label>
+        <input id="case_number" name="case_number" placeholder="e.g. CC-2026-0001" required>
+        <p style="margin-top:20px"><button class="btn btn-green" type="submit">Request case</button>
+           <a class="btn" onclick="closePop()">Close</a></p>
+    </form>
 </div>
 <div class="card flush">{{ case_table(cases) }}</div>
+<script>
+    let popElement=document.getElementById("pop")
+
+    function showPop(){
+        popElement.style.display="flex";
+    }
+    function closePop(){
+       popElement.style.display="none";  
+    }
+</script>
 {% endblock %}

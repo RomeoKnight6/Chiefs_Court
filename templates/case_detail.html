@@ -28,11 +28,9 @@
     </div>
 </div>
 
-{% if role != 'applicant' %}
+
 <div class="detail-grid">
-{% else %}
-<div class="case-grid">
-{% endif %}
+
     {# ================= Left: the case itself ================= #}
     <div>
         <div class="card">
@@ -102,20 +100,170 @@
         </div>
         {% endif %}
 
-        {% if role in ['accountant', 'clerk'] %}
         <div class="card flush">
             <div class="card-head"><h3>Payments</h3></div>
             {% if payments %}
             <div class="table-wrap"><table>
                 <tr><th>Date</th><th>Paid by</th><th>Type</th><th>Amount</th><th>Purpose</th><th>Reference</th></tr>
                 {% for p in payments %}
-                <tr><td>{{ p.created_at[:10] }}</td><td>{{ p.payer_name }}</td><td>{{ p.payer_type }}</td>
-                    <td>{{ '%.2f'|format(p.amount) }}</td><td>{{ p.purpose }}</td><td>{{ p.reference }}</td></tr>
-                {% endfor %}
+<tr>
+    <td>{{ p.created_at[:10] if p.created_at else '—' }}</td>
+    <td>{{ p.payer_name }}</td>
+    <td>{{ p.payer_type }}</td>
+    <td><strong>{{ '%.2f'|format(p.amount) }}</strong></td>
+    <td>
+        <div class="payment-purpose">
+            <span class="purpose-text">
+                {{ p.purpose or 'No purpose specified' }}
+            </span>
+        </div>
+    </td>
+    <td>{{ p.reference or '—' }}</td>
+</tr>
+{% endfor %}
             </table></div>
             {% else %}<div class="empty">No payments logged for this case.</div>{% endif %}
         </div>
+
+
+
+{% if role in ['accountant', 'clerk'] %}
+<div class="card flush payment-review-card">
+    <div class="card-head payment-review-header">
+        <div>
+            <h3>Payment Verification</h3>
+            <p>Review payment proofs submitted for this case.</p>
+        </div>
+        {% if submitted_payments %}
+        <span class="payment-count">{{ submitted_payments|length }}</span>
         {% endif %}
+    </div>
+
+    {% if submitted_payments %}
+    <div class="payment-list">
+        {% for sp in submitted_payments %}
+        <div class="payment-item">
+            <div class="payment-info">
+                <div class="payment-icon">₵</div>
+                <div class="payment-details">
+                    <strong>{{ sp.payer_name }}</strong>
+                    <span>{{ sp.created_at[:10] if sp.created_at else 'Date unavailable' }}</span>
+                </div>
+            </div>
+
+            <div class="payment-amount">
+                <strong>{{ '%.2f'|format(sp.amount) }}</strong>
+                <span>{{ sp.payer_type }}</span>
+            </div>
+
+            <div class="payment-status">
+                {% if sp.status == 'Pending' %}
+                    <span class="payment-badge pending">Pending</span>
+                {% elif sp.status == 'Approved' %}
+                    <span class="payment-badge approved">Approved</span>
+                {% elif sp.status == 'Rejected' %}
+                    <span class="payment-badge rejected">Disapproved</span>
+                {% else %}
+                    <span class="payment-badge">{{ sp.status }}</span>
+                {% endif %}
+            </div>
+
+            <div class="payment-controls">
+                {% if sp.proof_file %}
+                <a href="{{ url_for('payment_proof_file', payment_id=sp.id) }}"
+                   target="_blank"
+                   rel="noopener noreferrer"
+                   class="payment-view-btn">
+                    View proof
+                </a>
+                {% endif %}
+
+                {% if sp.status == 'Pending' and role == 'accountant' %}
+                <div class="payment-decision">
+                    <form method="post"
+                          action="{{ url_for('review_submitted_payment', payment_id=sp.id) }}"
+                          onsubmit="return confirm('Approve this payment?');">
+                        <input type="hidden" name="decision" value="Approved">
+                        <button type="submit" class="payment-approve-btn">
+                            Approve
+                        </button>
+                    </form>
+
+                    <form method="post"
+                          action="{{ url_for('review_submitted_payment', payment_id=sp.id) }}"
+                          onsubmit="return confirm('Disapprove this payment?');">
+                        <input type="hidden" name="decision" value="Rejected">
+                        <button type="submit" class="payment-reject-btn">
+                            Reject
+                        </button>
+                    </form>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty payment-empty">
+        <p>No payment submissions yet.</p>
+    </div>
+    {% endif %}
+</div>
+
+         
+{% endif %}
+
+
+{# ---------- Case Access Requests ---------- #}
+{% if role == 'clerk' %}
+<div class="card flush">
+    <div class="card-head">
+        <h3>Case Access Requests</h3>
+    </div>
+
+    {% if access_requests %}
+        {% for request in access_requests %}
+            <div class="hearing-row">
+                <div class="hearing-info">
+                    <strong>{{ request.respondent_name }}</strong>
+                    <span>{{ request.respondent_email }}</span>
+                </div>
+
+                {% if request.status == 'Pending' %}
+    <form method="post"
+          action="{{ url_for(
+              'case_access_review',
+              request_id=request.id
+          ) }}"
+          style="display: inline-flex; gap: 8px;">
+
+        <button type="submit"
+                name="decision"
+                value="approve"
+                class="btn btn-green">
+            Approve
+        </button>
+
+        <button type="submit"
+                name="decision"
+                value="reject"
+                class="btn btn-red">
+            Disapprove
+        </button>
+    </form>
+{% else %}
+    {{ status_badge(request.status) }}
+{% endif %}
+            </div>
+        {% endfor %}
+    {% else %}
+        <div class="empty">
+            No access requests for this case.
+        </div>
+    {% endif %}
+</div>
+{% endif %}
+
 
         {% if role == 'clerk' and summons_list %}
         <div class="card flush">
@@ -159,7 +307,7 @@
 
             <div class="tab-panel active" id="t-hearing">
                 <form method="post" action="{{ url_for('case_schedule', case_id=case.id) }}">
-                    <label class="required">Date</label><input type="date" name="hearing_date" required>
+                    <label class="required">Date</label><input type="date" name="hearing_date" id="dates" required>
                     <label class="required">Time</label><input type="time" name="hearing_time" required>
                     <label>Type of hearing</label>
                     <select name="mode" data-mode-select><option>Physical</option><option>Online</option></select>
@@ -238,29 +386,128 @@
         </div>
         {% endif %}
 
+         {# ---------- Payment ---------- #}
+        {% if role == 'applicant' %}
+
+<div class="card form-stack">
+    <h3>Submit proof of payment</h3>
+
+    <form method="post"
+          action="{{ url_for('submit_payment_proof', case_id=case.id) }}"
+          enctype="multipart/form-data">
+
+
+        <label class="required">Payer is the</label>
+        <select name="payer_type" required>
+            <option value="Applicant">Applicant</option>
+            <option value="Respondent">Respondent</option>
+        </select>
+
+        <label class="required">Amount paid</label>
+        <input name="amount" type="number"
+               step="0.01" min="0.01" required>
+
+        <label class="required">Payment method</label>
+        <select name="method" required>
+            <option value="">Select method</option>
+            <option value="Mobile money">Mobile money</option>
+            <option value="Bank">Bank transfer</option>
+            <option value="Online">Online payment</option>
+        </select>
+
+        <label class="required">Transaction reference</label>
+        <input name="reference" required>
+
+        <label class="required">Upload receipt / proof</label>
+
+        <input type="file"
+               name="proof_file"
+               id="payment-proof-file"
+               accept=".pdf,.jpg,.jpeg,.png"
+               required
+               style="display:none">
+
+        
+
+        <button type="button"
+                id="choose-payment-proof"
+                class="upload-button">
+            + upload
+        </button>
+        <div id="payment-proof-file-set"></div>
+        <label>Additional notes</label>
+        <textarea name="notes"
+                  placeholder="Optional payment details"></textarea>
+
+        <p style="margin-top:16px">
+            <button type="submit" class="btn btn-yellow btn-block">
+                Submit proof of payment
+            </button>
+        </p>
+    </form>
+</div>
+{% endif %}
+
         {% if role in ['assessor'] %}
         <div class="card"><h3>Read-only access</h3>
             <p class="muted" style="margin:0">As assessor you can read this case and join its hearings. Only the clerk and chief can change it.</p></div>
         {% endif %}
     </div>
 </div>
+
 <script>
-    const fileInput = document.getElementById("doc");
+const fileInput = document.getElementById("doc");
+const paymentInput = document.getElementById("payment-proof-file");
+
 const chooseFile = document.getElementById("chooseFile");
-const fileShow= document.getElementById("file-set");
-chooseFile.addEventListener("click", () => fileInput.click());
+const choosePayment = document.getElementById("choose-payment-proof");
 
-fileInput.addEventListener("change", () => {
-    let summonDoc;
-    for (const file of fileInput.files) {
-        summonDoc=file
-    }
-    fileShow.style.display='block';
-    fileShow.innerHTML=`<a class="doc-link">{{ icon('file') }} ${summonDoc.name}</a>`
+const fileShow = document.getElementById("file-set");
+const paymentShow = document.getElementById("payment-proof-file-set");
 
-    // Clear the picker so the same file can be selected again if needed.
-    //fileInput.value = "";
-});
+const dateElement = document.getElementById("dates");
 
+// Set the earliest hearing date, if the date field exists.
+if (dateElement) {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    dateElement.min = yesterday.toISOString().split("T")[0];
+}
+
+// Summons upload
+if (fileInput && chooseFile && fileShow) {
+    chooseFile.addEventListener("click", () => fileInput.click());
+
+    fileInput.addEventListener("change", () => {
+        const file = fileInput.files[0];
+
+        fileShow.innerHTML = "";
+
+        if (file) {
+            fileShow.style.display = "block";
+            fileShow.textContent = file.name;
+            fileShow.classList.add("doc-link");
+        }
+    });
+}
+
+// Payment proof upload
+if (paymentInput && choosePayment && paymentShow) {
+    choosePayment.addEventListener("click", () => paymentInput.click());
+
+    paymentInput.addEventListener("change", () => {
+        const file = paymentInput.files[0];
+
+        paymentShow.innerHTML = "";
+        paymentShow.classList.remove("doc-link");
+
+        if (file) {
+            paymentShow.style.display = "block";
+            paymentShow.textContent =  file.name;
+            paymentShow.classList.add("doc-link");
+        }
+    });
+}
 </script>
+
 {% endblock %}

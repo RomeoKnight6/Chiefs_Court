@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime
 from functools import wraps
 
-from flask import (Flask, abort, flash, g, jsonify, redirect, render_template, request,
+from flask import (Flask, current_app,abort, flash, g, jsonify, redirect, render_template, request,
                    send_from_directory, session, url_for)
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
@@ -117,17 +117,41 @@ def role_required(*roles):
     return decorator
 
 
+
 def can_view_case(case):
     role = g.user["role"]
+
     if role == "applicant":
-        return case["applicant_id"] == g.user["id"]
+        if case["applicant_id"] == g.user["id"]:
+            return True
+
+        # Allow access if a clerk has approved the applicant's request.
+        approved_request = db.query(
+            """
+            SELECT id
+            FROM case_access_requests
+            WHERE case_id = ?
+              AND respondent_id = ?
+              AND status = 'Approved'
+            """,
+            (case["id"], g.user["id"]),
+            one=True
+        )
+
+        return approved_request is not None
+
     if role in ("admin", "messenger"):
         return False
+
     if case["jurisdiction"] != g.user["jurisdiction"]:
         return False
-    if role in ("chief", "assessor"):          # they only see cases the clerk has approved
+
+    if role in ("chief", "assessor"):
+        # They only see cases the clerk has approved.
         return case["status"] not in ("Pending", "Denied")
-    return True                                # clerk and accountant
+
+    return True
+                      # clerk and accountant
 
 
 def get_case_or_403(case_id):
@@ -139,26 +163,90 @@ def get_case_or_403(case_id):
     return case
 
 
+
 def cases_for_current_user():
-    """The list of cases the logged-in user is allowed to see."""
+    """Return the cases the logged-in user is allowed to see."""
     role = g.user["role"]
+
     if role == "applicant":
-        return db.query("SELECT * FROM cases WHERE applicant_id = ? ORDER BY id DESC", (g.user["id"],))
+        return db.query(
+            """
+            SELECT DISTINCT c.*
+            FROM cases AS c
+            LEFT JOIN case_access_requests AS r
+                ON r.case_id = c.id
+                AND r.respondent_id = ?
+                AND r.status = 'Approved'
+            WHERE c.applicant_id = ?
+               OR r.id IS NOT NULL
+            ORDER BY c.id DESC
+            """,
+            (g.user["id"], g.user["id"])
+        )
+
     if role in ("chief", "assessor"):
-        return db.query("SELECT * FROM cases WHERE jurisdiction = ? AND status NOT IN ('Pending','Denied') "
-                        "ORDER BY id DESC", (g.user["jurisdiction"],))
-    return db.query("SELECT * FROM cases WHERE jurisdiction = ? ORDER BY id DESC", (g.user["jurisdiction"],))
+        return db.query(
+            """
+            SELECT *
+            FROM cases
+            WHERE jurisdiction = ?
+              AND status NOT IN ('Pending', 'Denied')
+            ORDER BY id DESC
+            """,
+            (g.user["jurisdiction"],)
+        )
+
+    return db.query(
+        """
+        SELECT *
+        FROM cases
+        WHERE jurisdiction = ?
+        ORDER BY id DESC
+        """,
+        (g.user["jurisdiction"],)
+    )
 
 
 def hearings_for_current_user():
-    """Hearings from today onwards for the cases the user may see."""
+    """Return upcoming hearings for cases the current user can access."""
     today = datetime.now().strftime("%Y-%m-%d")
-    base = ("SELECT h.*, c.case_number, c.cause_of_action, c.jurisdiction FROM hearings h "
-            "JOIN cases c ON c.id = h.case_id WHERE h.hearing_date >= ? ")
+
+    base = """
+        SELECT DISTINCT
+            h.*,
+            c.case_number,
+            c.cause_of_action,
+            c.jurisdiction
+        FROM hearings h
+        JOIN cases c ON c.id = h.case_id
+        WHERE h.hearing_date >= ?
+    """
+
     if g.user["role"] == "applicant":
-        return db.query(base + "AND c.applicant_id = ? ORDER BY h.hearing_date, h.hearing_time", (today, g.user["id"]))
-    return db.query(base + "AND c.jurisdiction = ? ORDER BY h.hearing_date, h.hearing_time",
-                    (today, g.user["jurisdiction"]))
+        return db.query(
+            base + """
+                AND (
+                    c.applicant_id = ?
+                    OR EXISTS (
+                        SELECT 1
+                        FROM case_access_requests car
+                        WHERE car.case_id = c.id
+                          AND car.respondent_id = ?
+                          AND car.status = 'Approved'
+                    )
+                )
+                ORDER BY h.hearing_date, h.hearing_time
+            """,
+            (today, g.user["id"], g.user["id"])
+        )
+
+    return db.query(
+        base + """
+            AND c.jurisdiction = ?
+            ORDER BY h.hearing_date, h.hearing_time
+        """,
+        (today, g.user["jurisdiction"])
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -369,6 +457,72 @@ def case_new():
     return render_template("case_form.html", jurisdictions=jurisdictions)
 
 
+def review_case_access(request_id, decision):
+    if decision not in ("Approved", "Rejected"):
+        abort(400)
+
+    access_request = db.query(
+        """
+        SELECT r.id, r.case_id, r.respondent_id, r.status,
+               c.case_number, c.jurisdiction
+        FROM case_access_requests AS r
+        JOIN cases AS c ON c.id = r.case_id
+        WHERE r.id = ?
+        """,
+        (request_id,),
+        one=True
+    )
+
+    if access_request is None:
+        abort(404)
+
+    # Only a clerk in the case's jurisdiction can review the request.
+    if access_request["jurisdiction"] != g.user["jurisdiction"]:
+        abort(403)
+
+    if access_request["status"] != "Pending":
+        flash("This request has already been reviewed.", "error")
+        return redirect(
+            url_for("case_detail", case_id=access_request["case_id"])
+        )
+
+    db.execute(
+        """
+        UPDATE case_access_requests
+        SET status = ?,
+            reviewed_by = ?,
+            reviewed_at = ?
+        WHERE id = ?
+          AND status = 'Pending'
+        """,
+        (decision, g.user["id"], now(), request_id)
+    )
+
+    if decision == "Approved":
+        notify(
+            access_request["respondent_id"],
+            "Case access approved",
+            f"Your request to access case "
+            f"{access_request['case_number']} has been approved.",
+            access_request["case_id"]
+        )
+        flash("Case access request approved.", "success")
+    else:
+        notify(
+            access_request["respondent_id"],
+            "Case access request rejected",
+            f"Your request to access case "
+            f"{access_request['case_number']} has been rejected.",
+            access_request["case_id"]
+        )
+        flash("Case access request rejected.", "success")
+
+    return redirect(
+        url_for("case_detail", case_id=access_request["case_id"])
+    )
+
+
+
 @app.route("/cases/<int:case_id>")
 @login_required
 def case_detail(case_id):
@@ -381,19 +535,52 @@ def case_detail(case_id):
         "payments": [],
         "summons_list": [],
         "messengers": [],
+        "access_requests":[],
+        "submitted_payments":[],
         "participants": db.query(
     "SELECT * FROM case_participants WHERE case_id = ? ORDER BY id",
     (case_id,),
 ),
     }
+
     if role in ("accountant", "clerk"):
         data["payments"] = db.query("SELECT * FROM payments WHERE case_id = ? ORDER BY id DESC", (case_id,))
+        data["submitted_payments"]=db.query("""
+    SELECT sp.*, c.case_number
+    FROM submitted_payments AS sp
+    JOIN cases AS c ON c.id = sp.case_id
+    WHERE sp.case_id = ? AND sp.status = 'Pending'
+    ORDER BY sp.created_at DESC, sp.id DESC
+""", (case_id,))
+        
+    if role in ["applicant"]:
+        data["payments"] = db.query("SELECT * FROM payments WHERE case_id = ? ORDER BY id DESC", (case_id,))
+        
     if role == "clerk":
         data["summons_list"] = db.query(
             "SELECT s.*, u.first_name || ' ' || u.surname AS messenger_name FROM summons s "
             "JOIN users u ON u.id = s.messenger_id WHERE s.case_id = ? ORDER BY s.id DESC", (case_id,))
         data["messengers"] = db.query("SELECT * FROM users WHERE role = 'messenger' AND active = 1 AND jurisdiction = ?",
                                       (case["jurisdiction"],))
+        data["access_requests"] = db.query(
+        """
+        SELECT
+            car.id,
+            car.status,
+            car.created_at,
+            car.respondent_id,
+            u.first_name || ' ' || u.surname AS respondent_name,
+            u.email AS respondent_email,
+            c.case_number
+        FROM case_access_requests car
+        JOIN users u ON u.id = car.respondent_id
+        JOIN cases c ON c.id = car.case_id
+        WHERE car.case_id = ?
+        ORDER BY car.created_at DESC
+        """,
+        (case_id,)
+    )
+    print("ACCESS REQUESTS:", [dict(row) for row in data["access_requests"]])
     return render_template("case_detail.html", **data)
 
 
@@ -768,6 +955,424 @@ def admin_jurisdictions():
             flash("Village added.", "success")
         return redirect(url_for("admin_jurisdictions"))
     return render_template("admin_jurisdictions.html", jurisdictions=db.query("SELECT * FROM jurisdictions ORDER BY name"))
+
+
+@app.route("/case-access/<int:request_id>/review", methods=["POST"])
+@role_required("clerk")
+def case_access_review(request_id):
+    decision = request.form.get("decision", "").lower()
+
+    if decision not in ("approve", "reject"):
+        abort(400)
+
+    return review_case_access(
+        request_id,
+        "Approved" if decision == "approve" else "Rejected"
+    )
+
+
+@app.route("/case-request", methods=["POST"])
+@role_required("applicant")
+def request_case_access():
+    case_number = request.form.get("case_number", "").strip().upper()
+
+    if not case_number:
+        flash("Please enter a case number.", "error")
+        return redirect(request.referrer or url_for("case_list"))
+
+    # Find the case by its case number.
+    case = db.query(
+        """
+        SELECT id, case_number, jurisdiction
+        FROM cases
+        WHERE UPPER(case_number) = ?
+        """,
+        (case_number,),
+        one=True
+    )
+
+    if case is None:
+        flash("No case was found with that case number.", "error")
+        return redirect(request.referrer or url_for("case_list"))
+
+    # Confirm the logged-in user is listed as a respondent.
+    print(g.user["first_name"])
+    print(g.user["surname"])
+    participant = db.query(
+        """
+        SELECT id
+        FROM case_participants
+        WHERE case_id = ?
+          AND role = 'Respondent'
+          AND LOWER(TRIM(first_name)) = LOWER(TRIM(?))
+          AND LOWER(TRIM(surname)) = LOWER(TRIM(?))
+        """,
+        (case["id"], g.user["first_name"], g.user["surname"]),
+        one=True
+    )
+
+    if participant is None:
+        flash(
+            "Your account is not listed as a respondent on this case.",
+            "error"
+        )
+        return redirect(request.referrer or url_for("case_list"))
+
+    # Check whether this user has already requested access.
+    existing = db.query(
+        """
+        SELECT id, status
+        FROM case_access_requests
+        WHERE case_id = ? AND respondent_id = ?
+        """,
+        (case["id"], g.user["id"]),
+        one=True
+    )
+
+    if existing:
+        flash(
+            f"You already have an access request for this case "
+            f"(status: {existing['status']}).",
+            "info"
+        )
+        return redirect(request.referrer or url_for("case_list"))
+
+    # Insert the request. The database default sets status to Pending.
+    db.execute(
+        """
+        INSERT INTO case_access_requests (case_id, respondent_id)
+        VALUES (?, ?)
+        """,
+        (case["id"], g.user["id"])
+    )
+
+    # Notify clerks in the case's jurisdiction.
+    notify_officials(
+        case["jurisdiction"],
+        ["clerk"],
+        "New case access request",
+        f"An applicant has requested access to case {case['case_number']}.",
+        case["id"]
+    )
+
+    flash("Your case access request has been submitted for clerk review.", "success")
+    return redirect(request.referrer or url_for("case_list"))
+
+
+@app.route("/cases/<int:case_id>/payment-proof", methods=["POST"])
+@role_required("applicant")
+def submit_payment_proof(case_id):
+    # Confirm that the logged-in applicant can access this case.
+    case = get_case_or_403(case_id)
+
+    payer_type = request.form.get("payer_type", "").strip()
+    method = request.form.get("method", "").strip()
+    reference = request.form.get("reference", "").strip()
+    notes = request.form.get("notes", "").strip()
+    amount_text = request.form.get("amount", "").strip()
+    proof = request.files.get("proof_file")
+
+    if payer_type not in ("Applicant", "Respondent"):
+        flash("Please select a valid payer type.", "error")
+        return redirect(url_for("case_detail", case_id=case_id))
+
+    if method not in ("Mobile money", "Bank", "Online"):
+        flash("Please select a valid payment method.", "error")
+        return redirect(url_for("case_detail", case_id=case_id))
+
+    if not reference:
+        flash("Please enter the transaction reference.", "error")
+        return redirect(url_for("case_detail", case_id=case_id))
+
+    try:
+        amount = float(amount_text)
+        if not (0 < amount < float("inf")):
+            raise ValueError
+    except (ValueError, TypeError):
+        flash("Enter a valid payment amount.", "error")
+        return redirect(url_for("case_detail", case_id=case_id))
+
+    if not proof or not proof.filename:
+        flash("Please upload your payment receipt.", "error")
+        return redirect(url_for("case_detail", case_id=case_id))
+
+    # Check the file extension.
+    allowed_extensions = {"pdf", "jpg", "jpeg", "png"}
+    original_name = secure_filename(proof.filename)
+
+    if (
+        not original_name
+        or "." not in original_name
+        or original_name.rsplit(".", 1)[1].lower()
+        not in allowed_extensions
+    ):
+        flash("Upload a PDF, JPG, JPEG, or PNG receipt.", "error")
+        return redirect(url_for("case_detail", case_id=case_id))
+
+    # Keep payment proofs outside the public static directory.
+    upload_dir = os.path.join(current_app.instance_path, "payment_proofs")
+    os.makedirs(upload_dir, exist_ok=True)
+
+    extension = original_name.rsplit(".", 1)[1].lower()
+    stored_name = f"{uuid.uuid4().hex}.{extension}"
+    absolute_path = os.path.join(upload_dir, stored_name)
+
+    # Store the file, then record its path in the database.
+    try:
+        proof.save(absolute_path)
+
+        # Derive the payer's name from the signed-in account.
+        payer_name = (
+            f"{g.user['first_name']} {g.user['surname']}"
+        ).strip()
+
+        
+        db.execute("""
+            INSERT INTO submitted_payments (
+                case_id,
+                payer_name,
+                payer_type,
+                amount,
+                purpose,
+                method,
+                reference,
+                proof_file,
+                notes,
+                submitted_by,
+                status,
+                created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pending', ?)
+        """, (
+            case_id,
+            payer_name,
+            payer_type,
+            amount,
+            notes,
+            method,
+            reference,
+            stored_name,
+            notes,
+            g.user["id"],
+            now()
+        ))
+
+
+    except Exception:
+        # Avoid leaving an orphaned file if saving the record fails.
+        if os.path.exists(absolute_path):
+            os.remove(absolute_path)
+        current_app.logger.exception("Could not save payment proof")
+        flash("Could not submit your payment proof. Please try again.", "error")
+        return redirect(url_for("case_detail", case_id=case_id))
+
+    # Notify accountants in the case's jurisdiction.
+    notify_officials(
+        case["jurisdiction"],
+        ["accountant"],
+        "Payment awaiting verification",
+        f"Payment proof submitted for case {case['case_number']}.",
+        case_id
+    )
+
+    flash(
+        "Payment proof submitted successfully. It is awaiting accountant verification.",
+        "success"
+    )
+    return redirect(url_for("case_detail", case_id=case_id))
+
+
+@app.route("/submitted-payments/<int:payment_id>/review", methods=["POST"])
+@role_required("accountant")
+def review_submitted_payment(payment_id):
+    decision = request.form.get("decision", "").strip()
+    rejection_reason = request.form.get("rejection_reason", "").strip()
+
+    if decision not in ("Approved", "Rejected"):
+        flash("Invalid payment review decision.", "error")
+        return redirect(request.referrer or url_for("index"))
+
+    conn = db.get_db()
+
+    try:
+        # Load the submission and its case.
+        submission = conn.execute("""
+            SELECT sp.*, c.applicant_id, c.case_number,
+                   c.jurisdiction
+            FROM submitted_payments AS sp
+            JOIN cases AS c ON c.id = sp.case_id
+            WHERE sp.id = ?
+        """, (payment_id,)).fetchone()
+
+        if not submission:
+            flash("Submitted payment not found.", "error")
+            return redirect(request.referrer or url_for("index"))
+
+        # Ensure the accountant belongs to the case's jurisdiction.
+        user_jurisdiction = g.user["jurisdiction"]
+        if (
+            user_jurisdiction
+            and user_jurisdiction != submission["jurisdiction"]
+        ):
+            flash("You are not authorized to review this payment.", "error")
+            return redirect(url_for("case_detail",
+                                    case_id=submission["case_id"]))
+
+        # Do not process the same submission twice.
+        if submission["status"] != "Pending":
+            flash("This payment submission has already been reviewed.", "error")
+            return redirect(url_for("case_detail",
+                                    case_id=submission["case_id"]))
+
+        reviewed_at = now()
+        reviewer_id = g.user["id"]
+
+        # Approve: record the payment in the existing payments table.
+        if decision == "Approved":
+            conn.execute("""
+                INSERT INTO payments (
+                    case_id,
+                    payer_name,
+                    payer_type,
+                    amount,
+                    purpose,
+                    method,
+                    reference,
+                    logged_by,
+                    created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                submission["case_id"],
+                submission["payer_name"],
+                submission["payer_type"],
+                submission["amount"],
+                submission["purpose"],
+                submission["method"],
+                submission["reference"],
+                reviewer_id,
+                reviewed_at
+            ))
+
+            message = (
+                f"Your payment of {submission['amount']:.2f} for case "
+                f"{submission['case_number']} has been approved and "
+                "recorded by the court accountant."
+            )
+            subject = "Payment approved"
+
+        else:
+            # Rejected: no payment is added to the payments table.
+            message = (
+                f"Your payment proof for case {submission['case_number']} "
+                "was not approved. Please review the reason below and "
+                "contact the court accountant if you need assistance."
+            )
+
+            if rejection_reason:
+                message += f" Reason: {rejection_reason}"
+
+            subject = "Payment proof not approved"
+
+        # Update only if it is still pending.
+        cursor = conn.execute("""
+            UPDATE submitted_payments
+            SET status = ?,
+                reviewed_by = ?,
+                reviewed_at = ?,
+                rejection_reason = ?
+            WHERE id = ? AND status = 'Pending'
+        """, (
+            decision,
+            reviewer_id,
+            reviewed_at,
+            rejection_reason if decision == "Rejected" else None,
+            payment_id
+        ))
+
+        if cursor.rowcount != 1:
+            raise RuntimeError("Payment submission was already reviewed.")
+
+        # Notify the applicant through the existing notifications table.
+        conn.execute("""
+            INSERT INTO notifications (
+                user_id, subject, message, case_id, is_read, created_at
+            )
+            VALUES (?, ?, ?, ?, 0, ?)
+        """, (
+            submission["applicant_id"],
+            subject,
+            message,
+            submission["case_id"],
+            reviewed_at
+        ))
+
+        conn.commit()
+
+    except Exception:
+        conn.rollback()
+        current_app.logger.exception(
+            "Failed to review submitted payment %s", payment_id
+        )
+        flash("Could not process the payment review. Please try again.", "error")
+        return redirect(request.referrer or url_for("index"))
+
+    if decision == "Approved":
+        flash("Payment approved and added to recorded payments. The applicant has been notified.", "success")
+    else:
+        flash("Payment disapproved. The applicant has been notified.", "success")
+
+    return redirect(url_for("case_detail", case_id=submission["case_id"]))
+
+
+@app.route("/submitted-payments/<int:payment_id>/proof")
+@login_required
+def payment_proof_file(payment_id):
+    submission = db.query("""
+        SELECT sp.id, sp.case_id, sp.proof_file,
+               c.applicant_id, c.jurisdiction
+        FROM submitted_payments AS sp
+        JOIN cases AS c ON c.id = sp.case_id
+        WHERE sp.id = ?
+    """, (payment_id,), one=True)
+
+    if not submission:
+        abort(404)
+
+    user = g.user
+    role = user["role"]
+
+    # Applicants may only access their own case's proof.
+    if role == "applicant":
+        if submission["applicant_id"] != user["id"]:
+            abort(403)
+
+    # Court officials must belong to the case's jurisdiction.
+    elif role in ("accountant", "clerk", "chief", "assessor", "messenger"):
+        if user["jurisdiction"] != submission["jurisdiction"]:
+            abort(403)
+
+    elif role != "admin":
+        abort(403)
+
+    filename = submission["proof_file"]
+    if not filename:
+        abort(404)
+
+    upload_dir = os.path.join(
+        current_app.instance_path,
+        "payment_proofs"
+    )
+
+    file_path = os.path.join(upload_dir, filename)
+    if not os.path.isfile(file_path):
+        abort(404)
+
+    return send_from_directory(
+        upload_dir,
+        filename,
+        as_attachment=False
+    )
 
 
 @app.errorhandler(403)
