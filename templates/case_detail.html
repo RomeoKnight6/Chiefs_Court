@@ -470,7 +470,7 @@ const dateElement = document.getElementById("dates");
 // Set the earliest hearing date, if the date field exists.
 if (dateElement) {
     const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
+    yesterday.setDate(yesterday.getDate() - 0);
     dateElement.min = yesterday.toISOString().split("T")[0];
 }
 
